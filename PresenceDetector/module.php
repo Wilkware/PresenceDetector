@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-/** Generell funktions */
+// General helper functions
 require_once __DIR__ . '/../libs/_traits.php';
 
-/** Namespaced traits */
+// Namespaced traits
 use Wilkware\PresenceDetector\DebugHelper;
 use Wilkware\PresenceDetector\EventHelper;
+use Wilkware\PresenceDetector\FormHelper;
 use Wilkware\PresenceDetector\VariableHelper;
 
 /**
@@ -21,74 +22,130 @@ class PresenceDetector extends IPSModuleStrict
 
     use DebugHelper;
     use EventHelper;
+    use FormHelper;
     use VariableHelper;
 
     // -------------------------------------------------------------------------
     // Schedule Constants
     // -------------------------------------------------------------------------
 
-    /** @var string Schedule name */
-    private const SCHEDULE_NAME = 'Zeitplan';
+    /** @var int Schedule ON */
+    public const SCHEDULE_ON = 1;
 
-    /** @var string Schedule identifier */
-    private const SCHEDULE_IDENT = 'circuit_diagram';
+    /** @var int Schedule OFF */
+    public const SCHEDULE_OFF = 2;
 
-    /** @var array<int,mixed> Schedule switch options */
-    private const SCHEDULE_SWITCH = [
-        1 => ['Aktiv', 0x00FF00, ''],
-        2 => ['Inaktiv', 0xFF0000, ''],
+    /** @var string Schedule Name */
+    public const SCHEDULE_NAME = 'Schedule';
+
+    /** @var string Schedule Identifier */
+    public const SCHEDULE_IDENT = 'circuit_diagram';
+
+    /** @var array<int,array<mixed>> Schedule Switch */
+    public const SCHEDULE_SWITCH = [
+        self::SCHEDULE_ON  => ['Active', 0x00FF00, ''],
+        self::SCHEDULE_OFF => ['Inactive', 0xFF0000, ''],
     ];
 
     // -------------------------------------------------------------------------
-    // Device Constants
+    // Logical Link Constants
     // -------------------------------------------------------------------------
 
-    /** @var int Device one */
-    private const DEVICE_ONE = 0;
-
-    /** @var int Device multiple */
-    private const DEVICE_MULTIPLE = 1;
-
-    /** @var int Logical constant */
+    /** @var int Logical link AND */
     private const LINK_AND = 0;
 
-    /** @var int Logical constant */
+    /** @var int Logical link OR */
     private const LINK_OR = 1;
 
-    /** @var int Logical constant */
+    /** @var int Logical link NOT */
     private const LINK_NOT = 2;
+
+    /** @var array<int,string> Logical link names (untranslated) */
+    private const LINK_NAMES = [
+        self::LINK_AND => '∧ (and)',
+        self::LINK_OR  => '∨ (or)',
+        self::LINK_NOT => '¬ (not)',
+    ];
+
+    // -------------------------------------------------------------------------
+    // Status Constants
+    // -------------------------------------------------------------------------
+
+    /** @var int Switch variable missing */
+    private const STATUS_VARIABLE_MISSING = 201;
+
+    /** @var int Switch variable not switchable */
+    private const STATUS_VARIABLE_INVALID = 202;
+
+    /** @var int Motion variable missing */
+    private const STATUS_MOTION_MISSING = 203;
+
+    /** @var int Brightness variable missing */
+    private const STATUS_BRIGHTNESS_MISSING = 204;
+
+    /** @var int Weekly schedule missing */
+    private const STATUS_SCHEDULE_MISSING = 205;
+
+    /** @var int Script missing */
+    private const STATUS_SCRIPT_MISSING = 206;
+
+    /** @var int Time frame required for AND/NOT link */
+    private const STATUS_DELAY_REQUIRED = 207;
+
+    // -------------------------------------------------------------------------
+    // Presentation Constants
+    // -------------------------------------------------------------------------
+
+    /** @var array<string,mixed> Automatic (switch) */
+    private const TPD_PRESENTATION_AUTOMATIC = [
+        'ICON_TRUE'    => 'person-walking',
+        'PRESENTATION' => VARIABLE_PRESENTATION_SWITCH,
+    ];
+
+    /** @var array<string,mixed> Brightness threshold (slider) */
+    private const TPD_PRESENTATION_THRESHOLD = [
+        'ICON'         => 'brightness-low',
+        'MAX'          => 500,
+        'MIN'          => 0,
+        'PRESENTATION' => VARIABLE_PRESENTATION_SLIDER,
+        'STEP_SIZE'    => 1,
+        'SUFFIX'       => ' lx',
+    ];
+
+    /** @var array<string,mixed> Last trigger (date and time); presentation has no icon */
+    private const TPD_PRESENTATION_TIME = [
+        'DATE'         => 1,
+        'PRESENTATION' => VARIABLE_PRESENTATION_DATE_TIME,
+        'TIME'         => 2,
+    ];
+
+    // -------------------------------------------------------------------------
+    // Constants
+    // -------------------------------------------------------------------------
+
+    /** @var int Device Type: Single */
+    private const DEVICE_ONE = 0;
+
+    /** @var int Device Type: Multiple */
+    private const DEVICE_MULTIPLE = 1;
 
     /** @var int Sensor delay time frame (milliseconds) */
     private const DELAY_TIME = 500;
 
-    /** @var int Min IPS Object ID */
+    /** @var int Min Symcon Object ID */
     private const IPS_MIN_ID = 10000;
 
-    // -------------------------------------------------------------------------
-    // Presentations
-    // -------------------------------------------------------------------------
+    /** @var string Ident of the time frame timer */
+    private const TIMER_IDENT = 'DelayTimer';
 
-    /**
-     * @var array<string,mixed> Presentation (type)
-     */
-    private const TPD_PRESENTATION_THREADHOLD = [
-        'USAGE_TYPE'          => 2,
-        'THOUSANDS_SEPARATOR' => '',
-        'DECIMAL_SEPARATOR'   => 'Client',
-        'PERCENTAGE'          => false,
-        'DIGITS'              => 0,
-        'INTERVALS'           => '[]',
-        'ICON'                => 'brightness-low',
-        'INTERVALS_ACTIVE'    => false,
-        'MAX'                 => 500,
-        'GRADIENT_TYPE'       => 0,
-        'MIN'                 => 0,
-        'CUSTOM_GRADIENT'     => '[]',
-        'PREFIX'              => '',
-        'PRESENTATION'        => VARIABLE_PRESENTATION_SLIDER,
-        'STEP_SIZE'           => 0.0,
-        'SUFFIX'              => ' lx',
-    ];
+    /** @var string Diagnosis row color for errors (red) */
+    private const ROW_ERROR = '#FFC0C0';
+
+    /** @var string Diagnosis row color for blocking conditions (yellow) */
+    private const ROW_BLOCKED = '#FFFFC0';
+
+    /** @var int Diagnosis result color for errors (red) */
+    private const RESULT_ERROR_COLOR = 0xFF0000;
 
     // -------------------------------------------------------------------------
     // Methods
@@ -105,69 +162,73 @@ class PresenceDetector extends IPSModuleStrict
         //Never delete this line!
         parent::Create();
 
-        // Sensors
+        // Sensors ...
+        $this->RegisterPropertyInteger('MotionVariable', 0);
         $this->RegisterPropertyInteger('LogicalLink', self::LINK_OR);
-        $this->RegisterPropertyInteger('MotionVariable', 1);
-        $this->RegisterPropertyInteger('SensorVariable', 1);
+        $this->RegisterPropertyInteger('SensorVariable', 0);
         $this->RegisterPropertyInteger('SensorDelay', self::DELAY_TIME);
-        $this->RegisterPropertyInteger('BrightnessVariable', 1);
-        $this->RegisterPropertyInteger('ThresholdValue', 0);
+        $this->RegisterPropertyInteger('BrightnessVariable', 0);
 
-        //Schedule
-        $this->RegisterPropertyInteger('EventVariable', 1);
+        // Time Control ...
+        $this->RegisterPropertyInteger('EventVariable', 0);
 
-        // Device
-        $this->RegisterPropertyInteger('DeviceNumber', 0);
-        $this->RegisterPropertyInteger('SwitchVariable', 1);
+        // Devices ...
+        $this->RegisterPropertyInteger('DeviceNumber', self::DEVICE_ONE);
+        $this->RegisterPropertyInteger('SwitchVariable', 0);
         $this->RegisterPropertyString('SwitchVariables', '[]');
-        $this->RegisterPropertyInteger('ScriptVariable', 1);
 
-        // Settings
-        $this->RegisterPropertyBoolean('ThresholdVariable', false);
+        // Advanced Settings ...
+        $this->RegisterPropertyInteger('ScriptVariable', 0);
         $this->RegisterPropertyBoolean('ExecuteAlways', false);
+        $this->RegisterPropertyBoolean('SettingsDirect', false);
+        $this->RegisterPropertyBoolean('CheckLastTrigger', false);
 
-        // Attribute
-        $this->RegisterAttributeInteger('Trigger', 0);
+        // Time of the last trigger (shown as variable only on demand)
+        $this->RegisterAttributeInteger('LastTrigger', 0);
+
+        // Up to v4: initial value of the threshold variable only (former form settings)
+        $this->RegisterPropertyInteger('ThresholdValue', 0);
+        $this->RegisterPropertyBoolean('ThresholdVariable', false);
 
         // Timer
-        $this->RegisterTimer('TPD.Timer', 0, 'IPS_RequestAction(' . $this->InstanceID . ', "DelayTrigger", "");');
+        $this->RegisterTimer(self::TIMER_IDENT, 0, 'IPS_RequestAction(' . $this->InstanceID . ', "DelayTrigger", "");');
+
+        // Wait for the kernel before accessing foreign variables
+        $this->RegisterMessage(0, IPS_KERNELSTARTED);
     }
 
     /**
-     * This function is called when deleting the instance during operation and when updating via "Module Control".
-     * The function is not called when exiting Symcon.
+     * Migrates the configuration of older versions.
      *
-     * @return void
+     * Up to v4 a single switch variable without an action was set directly.
+     * Keep this behaviour for existing instances which rely on it.
+     *
+     * @param string $json Configuration data as JSON
+     *
+     * @return string Migrated configuration data as JSON
      */
-    public function Destroy(): void
+    public function Migrate(string $json): string
     {
-        parent::Destroy();
-    }
+        //Never delete this line!
+        parent::Migrate($json);
 
-    /**
-     * The content can be overwritten in order to transfer a self-created configuration page.
-     * This way, content can be generated dynamically.
-     * In this case, the "form.json" on the file system is completely ignored.
-     *
-     * @return string Content of the configuration page.
-     */
-    public function GetConfigurationForm(): string
-    {
-        // Get Form
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-        // number of devices
-        $number = $this->ReadPropertyInteger('DeviceNumber');
-        $form['elements'][4]['items'][1]['visible'] = ($number === self::DEVICE_ONE);
-        $form['elements'][4]['items'][2]['visible'] = ($number === self::DEVICE_MULTIPLE);
-        // device list (set status column)
-        $variables = json_decode($this->ReadPropertyString('SwitchVariables'), true);
-        foreach ($variables as $variable) {
-            $form['elements'][4]['items'][2]['values'][] = [
-                'Status' => $this->GetVariableStatus($variable['VariableID']),
-            ];
+        $data = json_decode($json);
+        if (!is_object($data) || !isset($data->configuration) || !is_object($data->configuration)) {
+            return $json;
         }
-        // return form
-        return json_encode($form);
+        $config = $data->configuration;
+        if (isset($config->SettingsDirect)) {
+            return $json;
+        }
+        if ((int) ($config->DeviceNumber ?? self::DEVICE_ONE) !== self::DEVICE_ONE) {
+            return $json;
+        }
+        $vid = (int) ($config->SwitchVariable ?? 0);
+        if (($vid >= self::IPS_MIN_ID) && IPS_VariableExists($vid) && !HasAction($vid)) {
+            $config->SettingsDirect = true;
+            return json_encode($data);
+        }
+        return $json;
     }
 
     /**
@@ -180,121 +241,124 @@ class PresenceDetector extends IPSModuleStrict
         //Never delete this line!
         parent::ApplyChanges();
 
-        //Delete all references in order to readd them
-        foreach ($this->GetReferenceList() as $referenceID) {
-            $this->UnregisterReference($referenceID);
+        // Maintain variables
+        $created = (@$this->GetIDForIdent('Automatic') === false);
+        $this->MaintainVariable('Automatic', $this->Translate('Automatic'), VARIABLETYPE_BOOLEAN, self::TPD_PRESENTATION_AUTOMATIC, 0, true);
+        if ($created) {
+            $this->SetValueBoolean('Automatic', true);
         }
+        $this->EnableAction('Automatic');
 
-        //Delete all registrations in order to readd them
-        foreach ($this->GetMessageList() as $senderID => $messages) {
-            foreach ($messages as $message) {
-                $this->UnregisterMessage($senderID, $message);
+        $brightness = ($this->ReadPropertyInteger('BrightnessVariable') >= self::IPS_MIN_ID);
+        $created = (@$this->GetIDForIdent('BrightnessThreshold') === false);
+        $this->MaintainVariable('BrightnessThreshold', $this->Translate('Brightness threshold'), VARIABLETYPE_INTEGER, self::TPD_PRESENTATION_THRESHOLD, 1, $brightness);
+        if ($brightness) {
+            if ($created) {
+                $this->SetValueInteger('BrightnessThreshold', $this->ReadPropertyInteger('ThresholdValue'));
             }
-        }
-        //Register references
-        $variable = $this->ReadPropertyInteger('MotionVariable');
-        if (IPS_VariableExists($variable)) {
-            $this->RegisterReference($variable);
-        }
-        $variable = $this->ReadPropertyInteger('SensorVariable');
-        if (IPS_VariableExists($variable)) {
-            $this->RegisterReference($variable);
-        }
-        $variable = $this->ReadPropertyInteger('BrightnessVariable');
-        if (IPS_VariableExists($variable)) {
-            $this->RegisterReference($variable);
-        }
-        $event = $this->ReadPropertyInteger('EventVariable');
-        if (IPS_EventExists($event)) {
-            $this->RegisterReference($event);
-        }
-        $script = $this->ReadPropertyInteger('ScriptVariable');
-        if (IPS_ScriptExists($script)) {
-            $this->RegisterReference($script);
-        }
-        $variables = json_decode($this->ReadPropertyString('SwitchVariables'), true);
-        foreach ($variables as $variable) {
-            if (IPS_VariableExists($variable['VariableID'])) {
-                $this->RegisterReference($variable['VariableID']);
-            }
-        }
-        $variable = $this->ReadPropertyInteger('SwitchVariable');
-        if (IPS_VariableExists($variable)) {
-            $this->RegisterReference($variable);
-        }
-
-        //Safty checks
-        $this->SetTimerInterval('TPD.Timer', 0);
-        $this->WriteAttributeInteger('Trigger', 1);
-
-        $variable = $this->ReadPropertyInteger('MotionVariable');
-        if (($variable >= self::IPS_MIN_ID) && !IPS_VariableExists($variable)) {
-            $this->LogDebug(__FUNCTION__, 'MotionVariable: ' . $variable);
-            $this->SetStatus(104);
-            return;
-        }
-        $variable = $this->ReadPropertyInteger('SensorVariable');
-        if (($variable >= self::IPS_MIN_ID) && !IPS_VariableExists($variable)) {
-            $this->LogDebug(__FUNCTION__, 'SensorVariable: ' . $variable);
-            $this->SetStatus(104);
-            return;
-        }
-        $variable = $this->ReadPropertyInteger('BrightnessVariable');
-        if (($variable >= self::IPS_MIN_ID) && !IPS_VariableExists($variable)) {
-            $this->LogDebug(__FUNCTION__, 'BrightnessVariable: ' . $variable);
-            $this->SetStatus(104);
-            return;
-        }
-        $event = $this->ReadPropertyInteger('EventVariable');
-        if (($event >= self::IPS_MIN_ID) && !IPS_EventExists($event)) {
-            $this->LogDebug(__FUNCTION__, 'EventVariable: ' . $event);
-            $this->SetStatus(104);
-            return;
-        }
-        $script = $this->ReadPropertyInteger('ScriptVariable');
-        if (($script >= self::IPS_MIN_ID) && !IPS_ScriptExists($script)) {
-            $this->LogDebug(__FUNCTION__, 'ScriptVariable: ' . $script);
-            $this->SetStatus(104);
-            return;
-        }
-
-        $number = $this->ReadPropertyInteger('DeviceNumber');
-        if ($number == self::DEVICE_ONE) {
-            $variable = $this->ReadPropertyInteger('SwitchVariable');
-            if (!IPS_VariableExists($variable)) {
-                $this->LogDebug(__FUNCTION__, 'SwitchVariable: ' . $variable);
-                $this->SetStatus(104);
-                return;
-            }
-        } else {
-            $ok = 0;
-            foreach ($variables as $variable) {
-                if ($this->GetVariableStatus($variable['VariableID']) == 'OK') {
-                    $ok++;
-                }
-            }
-            if ((empty($variables)) || ($ok != count($variables))) {
-                $this->LogDebug(__FUNCTION__, 'SwitchVariables: ' . $ok);
-                $this->SetStatus(104);
-                return;
-            }
-        }
-
-        //Register update messages = Create our trigger
-        if (IPS_VariableExists($this->ReadPropertyInteger('MotionVariable'))) {
-            $this->RegisterMessage($this->ReadPropertyInteger('MotionVariable'), VM_UPDATE);
-        }
-        if (IPS_VariableExists($this->ReadPropertyInteger('SensorVariable'))) {
-            $this->RegisterMessage($this->ReadPropertyInteger('SensorVariable'), VM_UPDATE);
-        }
-
-        // Threshold
-        $threshold = $this->ReadPropertyBoolean('ThresholdVariable');
-        $this->MaintainVariable('BrightnessThreshold', $this->Translate('Brightness threshold'), VARIABLETYPE_INTEGER, self::TPD_PRESENTATION_THREADHOLD, 2, $threshold);
-        if ($threshold) {
             $this->EnableAction('BrightnessThreshold');
         }
-        $this->SetStatus(102);
+
+        $last = $this->ReadPropertyBoolean('CheckLastTrigger');
+        $created = (@$this->GetIDForIdent('LastTrigger') === false);
+        $this->MaintainVariable('LastTrigger', $this->Translate('Last trigger'), VARIABLETYPE_INTEGER, self::TPD_PRESENTATION_TIME, 2, $last);
+        if ($last && $created) {
+            // Date/time presentation has no icon parameter, so set the object icon once on creation
+            IPS_SetIcon($this->GetIDForIdent('LastTrigger'), 'clock-rotate-left');
+            $this->SetValueInteger('LastTrigger', $this->ReadAttributeInteger('LastTrigger'));
+        }
+
+        // Reset a running time frame
+        $this->ResetWindow();
+
+        // Delete all variable registrations in order to readd them
+        foreach ($this->GetMessageList() as $sender => $messages) {
+            if (in_array(VM_UPDATE, $messages, true)) {
+                $this->UnregisterMessage($sender, VM_UPDATE);
+            }
+        }
+
+        // Foreign objects may not be available yet, ApplyChanges is called again on IPS_KERNELSTARTED
+        if (IPS_GetKernelRunlevel() !== KR_READY) {
+            return;
+        }
+
+        // Delete all references in order to readd them
+        foreach ($this->GetReferenceList() as $reference) {
+            $this->UnregisterReference($reference);
+        }
+
+        // Register references
+        $sensors = $this->GetMotionVariables();
+        $variables = $this->GetSwitchVariables();
+        $objects = array_merge($sensors, $variables, [
+            $this->ReadPropertyInteger('BrightnessVariable'),
+            $this->ReadPropertyInteger('EventVariable'),
+            $this->ReadPropertyInteger('ScriptVariable'),
+        ]);
+        foreach ($objects as $object) {
+            if (($object >= self::IPS_MIN_ID) && IPS_ObjectExists($object)) {
+                $this->RegisterReference($object);
+            }
+        }
+
+        // Check configuration
+        $status = $this->CheckConfiguration($sensors, $variables);
+        if ($status !== IS_ACTIVE) {
+            $this->SetStatus($status);
+            return;
+        }
+
+        // Register messages update = create our trigger
+        foreach ($sensors as $sensor) {
+            $this->RegisterMessage($sensor, VM_UPDATE);
+        }
+
+        $this->SetStatus(IS_ACTIVE);
+    }
+
+    /**
+     * The content can be overwritten in order to transfer a self-created configuration page.
+     * This way, content can be generated dynamically.
+     * In this case, the "form.json" on the file system is completely ignored.
+     *
+     * @return string Content of the configuration page.
+     */
+    public function GetConfigurationForm(): string
+    {
+        // Get form
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
+
+        // Extract version
+        $ins = IPS_GetInstance($this->InstanceID);
+        $mod = IPS_GetModule($ins['ModuleInfo']['ModuleID']);
+        $lib = IPS_GetLibrary($mod['LibraryID']);
+        $version = sprintf('v%s.%d', $lib['Version'], $lib['Build']);
+        $this->ModifyFormElement($form['actions'], 'Version', function (array &$element) use ($version): void
+        {
+            $element['caption'] = $version;
+        });
+
+        // Number of devices
+        $devices = $this->ReadPropertyInteger('DeviceNumber');
+        $this->ModifyFormElement($form['elements'], 'SwitchVariable', function (array &$element) use ($devices): void
+        {
+            $element['visible'] = ($devices === self::DEVICE_ONE);
+        });
+
+        // Device list (set status column)
+        $values = [];
+        $list = json_decode($this->ReadPropertyString('SwitchVariables'), true);
+        foreach (is_array($list) ? $list : [] as $line) {
+            $values[] = ['Status' => $this->GetVariableStatus((int) ($line['VariableID'] ?? 0))];
+        }
+        $this->ModifyFormElement($form['elements'], 'SwitchVariables', function (array &$element) use ($devices, $values): void
+        {
+            $element['visible'] = ($devices === self::DEVICE_MULTIPLE);
+            $element['values'] = $values;
+        });
+
+        return json_encode($form);
     }
 
     /**
@@ -316,23 +380,23 @@ class PresenceDetector extends IPSModuleStrict
     public function MessageSink(int $timestamp, int $sender, int $message, array $data): void
     {
         switch ($message) {
+            case IPS_KERNELSTARTED:
+                $this->ApplyChanges();
+                break;
             case VM_UPDATE:
-                // Safety Check
-                $id1 = $this->ReadPropertyInteger('MotionVariable');
-                $id2 = $this->ReadPropertyInteger('SensorVariable');
-                if (($sender != $id1) && ($sender != $id2)) {
-                    $this->LogDebug(__FUNCTION__, $sender . ' unknown!');
+                if (!in_array($sender, $this->GetMotionVariables(), true)) {
+                    $this->LogDebug(__FUNCTION__, 'SenderID: ' . $sender . ' unknown!');
                     break;
                 }
-                // OnChange on TRUE, i.e. motion detected
-                if ($data[0] == true && $data[1] == true) {
-                    $this->LogDebug(__FUNCTION__, 'OnChange on TRUE - motion detected ' . $sender);
-                    $this->ProcessData($sender, $id1, $id2);
-                } elseif ($data[0] == false && $data[1] == true) { // OnChange on FALSE, i.e. no motion
-                    $this->LogDebug(__FUNCTION__, 'OnChange on FALSE - no motion');
-                } else { // OnChange on FALSE, i.e. no change of status
-                    $this->LogDebug(__FUNCTION__, 'OnChange unchanged - status not changed');
+                if (!$data[1]) {
+                    $this->LogDebug(__FUNCTION__, 'Motion #' . $sender . ' unchanged');
+                    break;
                 }
+                if (!(bool) $data[0]) {
+                    $this->LogDebug(__FUNCTION__, 'Motion #' . $sender . ' ended');
+                    break;
+                }
+                $this->OnMotion($sender);
                 break;
         }
     }
@@ -347,43 +411,40 @@ class PresenceDetector extends IPSModuleStrict
      */
     public function RequestAction(string $ident, mixed $value): void
     {
-        // Debug output
-        $this->LogDebug(__FUNCTION__, $ident . ' => ' . $value);
-        // Ident == OnXxxxxYyyyy
+        $this->LogDebug(__FUNCTION__, $ident . ' => ' . $this->Stringify($value));
         switch ($ident) {
+            case 'Automatic':
+                $this->SetValueBoolean($ident, (bool) $value);
+                if (!(bool) $value) {
+                    $this->ResetWindow();
+                }
+                break;
             case 'BrightnessThreshold':
-                $this->SetValueInteger($ident, $value);
+                $this->SetValueInteger($ident, (int) $value);
                 break;
             case 'DelayTrigger':
-                $this->ProcessData();
+                $this->OnWindowExpired();
+                break;
+            case 'OnCreateSchedule':
+                $this->OnCreateSchedule();
+                break;
+            case 'OnDeviceNumber':
+                $this->OnDeviceNumber((int) $value);
+                break;
+            case 'OnCheckState':
+                $this->OnCheckState();
                 break;
             default:
-                eval('$this->' . $ident . '(\'' . $value . '\');');
+                $this->LogDebug(__FUNCTION__, 'Unknown ident: ' . $ident);
         }
     }
 
     /**
-     * User has select an new number of devices.
-     *
-     * @param int $value select value.
+     * Creates a weekly schedule below the instance.
      *
      * @return void
      */
-    protected function OnDeviceNumber(int $value): void
-    {
-        $this->LogDebug(__FUNCTION__, 'Value: ' . $value);
-        $this->UpdateFormField('SwitchVariable', 'visible', ($value == self::DEVICE_ONE));
-        $this->UpdateFormField('SwitchVariables', 'visible', ($value == self::DEVICE_MULTIPLE));
-    }
-
-    /**
-     * Creates a schedule plan.
-     *
-     * @param string $value instance ID.
-     *
-     * @return void
-     */
-    protected function OnCreateSchedule($value): void
+    private function OnCreateSchedule(): void
     {
         $eid = $this->CreateWeeklySchedule($this->InstanceID, self::SCHEDULE_NAME, self::SCHEDULE_IDENT, self::SCHEDULE_SWITCH, -1);
         if (IPS_EventExists($eid)) {
@@ -392,282 +453,569 @@ class PresenceDetector extends IPSModuleStrict
     }
 
     /**
-     * Main entry point for the whole switch process.
+     * User has selected a new number of devices.
      *
-     * @param int $sender Sender ID
-     * @param int $id1 Motion sensor ID 1
-     * @param int $id2 Motion sensor ID 2
+     * @param int $value Selected value.
      *
      * @return void
      */
-    private function ProcessData(int $sender = -1, int $id1 = 1, int $id2 = 1): void
+    private function OnDeviceNumber(int $value): void
     {
-        $this->LogDebug(__FUNCTION__, 'Sender: ' . $sender . ', Sensoren = [ ' . $id1 . ', ' . $id2 . ']');
-        // first step is to check logical link
-        $check = $this->CheckLink($sender, $id1, $id2);
-        $this->LogDebug(__FUNCTION__, 'CheckLink: ' . var_export($check, true));
-        // next step is to check weekly schedule
-        $check = $check && $this->CheckSchedule();
-        $this->LogDebug(__FUNCTION__, 'CheckSchedule: ' . var_export($check, true));
-        // next step is to check brightness
-        $check = $check && $this->CheckBrightness();
-        $this->LogDebug(__FUNCTION__, 'CheckBrightness: ' . var_export($check, true));
-        // next step is to switch devices
-        if ($check) {
-            $this->SwitchDevices();
-        }
-        // last step is the script execution
-        if ($check || $this->ReadPropertyBoolean('ExecuteAlways')) {
-            $this->ExecuteScript();
-        }
+        $this->UpdateFormField('SwitchVariable', 'visible', ($value === self::DEVICE_ONE));
+        $this->UpdateFormField('SwitchVariables', 'visible', ($value === self::DEVICE_MULTIPLE));
     }
 
     /**
-     * Check logical link
+     * Diagnosis: shows all conditions and what a motion would do right now (read-only, switches nothing).
      *
-     * @param int $sender Sender ID
-     * @param int $id1 Motion sensor ID 1
-     * @param int $id2 Motion sensor ID 2
-     *
-     * @return bool true if check successful; otherwise false.
+     * @return void
      */
-    private function CheckLink(int $sender, int $id1, int $id2): bool
+    private function OnCheckState(): void
     {
-        // Exist logical link
-        if (($sender != -1) && (($id1 < self::IPS_MIN_ID) || ($id2 < self::IPS_MIN_ID))) {
-            $this->LogDebug(__FUNCTION__, 'no link - no check: ' . $id1 . ' : ' . $id2);
-            return true; // no link no check
+        $unused = $this->Translate('not used');
+        $rows = [];
+
+        // Configuration (errors are marked in the detail rows)
+        $sensors = $this->GetMotionVariables();
+        $variables = $this->GetSwitchVariables();
+        $status = $this->CheckConfiguration($sensors, $variables);
+
+        // Automatic
+        $automatic = $this->IsAutomatic();
+        $rows[] = $this->DiagnosisRow('Automatic', $automatic ? $this->Translate('ON') : $this->Translate('OFF'), $automatic ? '' : self::ROW_BLOCKED);
+
+        // Motion detectors
+        if (empty($sensors)) {
+            $rows[] = $this->DiagnosisRow('Motion detector', $this->Translate('none selected'), self::ROW_ERROR);
         }
-        $this->LogDebug(__FUNCTION__, 'Sender: ' . $sender);
-        // Check locical link
-        $link = $this->ReadPropertyInteger('LogicalLink');
-        $time = $this->ReadPropertyInteger('SensorDelay');
-        switch ($link) {
-            case self::LINK_AND: // AND
-                // Timer expired ?
-                if ($sender == -1) {
-                    break;
-                }
-                // check pre condition
-                $trigger = $this->ReadAttributeInteger('Trigger');
-                $this->LogDebug(__FUNCTION__, 'Trigger (and): ' . $trigger);
-                if (($trigger >= self::IPS_MIN_ID) && ($trigger != $sender)) {
-                    $this->LogDebug(__FUNCTION__, 'AND condition fulfilled!');
-                    // AND condition fulfilled => reset all => fire
-                    $this->SetTimerInterval('TPD.Timer', 0);
-                    $this->WriteAttributeInteger('Trigger', 1);
-                    return true;
-                }
-                if ($trigger < self::IPS_MIN_ID) {
-                    $this->LogDebug(__FUNCTION__, 'AND condition not fulfilled');
-                    // AND condition not fulfilled => init all => wait
-                    if ($time > 0) {
-                        $this->SetTimerInterval('TPD.Timer', $time);
-                        $this->WriteAttributeInteger('Trigger', $sender);
-                    }
-                    return false; // we wait
-                }
-                break;
-            case self::LINK_OR: // OR
-                // Timer expired ?
-                if ($sender == -1) {
-                    break;
-                }
-                // check pre condition
-                $trigger = $this->ReadAttributeInteger('Trigger');
-                $this->LogDebug(__FUNCTION__, 'Trigger (or): ' . $trigger);
-                if ($trigger < self::IPS_MIN_ID) {
-                    $this->LogDebug(__FUNCTION__, 'OR condition ');
-                    // OR condition fulfilled => fire and wait to block reswitch
-                    if ($time > 0) {
-                        $this->SetTimerInterval('TPD.Timer', $time);
-                        $this->WriteAttributeInteger('Trigger', $sender);
-                    }
-                    return true; // and wait
-                }
-                break;
-            case self::LINK_NOT: // NOT
-                $trigger = $this->ReadAttributeInteger('Trigger');
-                $this->LogDebug(__FUNCTION__, 'Trigger (not): ' . $trigger);
-                if (($sender == -1) && ($trigger >= self::IPS_MIN_ID)) {
-                    $this->LogDebug(__FUNCTION__, 'NOT condition fulfilled!');
-                    // NOR condition fulfilled => reset all => fire
-                    $this->SetTimerInterval('TPD.Timer', 0);
-                    $this->WriteAttributeInteger('Trigger', 1);
-                    return true;
-                }
-                if (($sender >= self::IPS_MIN_ID) && ($trigger < self::IPS_MIN_ID)) {
-                    $this->LogDebug(__FUNCTION__, 'NOR condition still fulfilled (wait)');
-                    // NOR condition still fulfilled => init all => wait
-                    if ($time > 0) {
-                        $this->SetTimerInterval('TPD.Timer', $time);
-                        $this->WriteAttributeInteger('Trigger', ($sender == $id1) ? $sender : 1);
-                    }
-                    return false; // we wait
-                }
-                break;
+        foreach ($sensors as $mid) {
+            if (!IPS_VariableExists($mid)) {
+                $rows[] = $this->DiagnosisRow('Motion detector', '#' . $mid . ' ' . $this->Translate('Missing'), self::ROW_ERROR);
+                continue;
+            }
+            $motion = (bool) GetValue($mid);
+            $rows[] = $this->DiagnosisRow('Motion detector', IPS_GetName($mid) . ': ' . ($motion ? $this->Translate('motion detected') : $this->Translate('no motion')));
         }
-        // Timer has expired => Reset all
-        $this->LogDebug(__FUNCTION__, 'Timer has expired!');
-        $this->SetTimerInterval('TPD.Timer', 0);
-        $this->WriteAttributeInteger('Trigger', 1);
-        return false;
+
+        // Logical link and time frame
+        if (count($sensors) < 2) {
+            $rows[] = $this->DiagnosisRow('Link', $unused);
+        } else {
+            $link = $this->ReadPropertyInteger('LogicalLink');
+            $delay = $this->ReadPropertyInteger('SensorDelay');
+            $text = sprintf($this->Translate('%s, time frame: %d ms'), $this->Translate(self::LINK_NAMES[$link] ?? '?'), $delay);
+            $rows[] = $this->DiagnosisRow('Link', $text, ($status === self::STATUS_DELAY_REQUIRED) ? self::ROW_ERROR : '');
+            $waiting = (int) $this->GetBuffer('Trigger');
+            if (($this->GetTimerInterval(self::TIMER_IDENT) > 0) && ($waiting > 0)) {
+                $rows[] = $this->DiagnosisRow('Time frame', sprintf($this->Translate('running (started by #%d)'), $waiting));
+            } else {
+                $rows[] = $this->DiagnosisRow('Time frame', $this->Translate('not running'));
+            }
+        }
+
+        // Weekly schedule
+        $eid = $this->ReadPropertyInteger('EventVariable');
+        if ($eid < self::IPS_MIN_ID) {
+            $rows[] = $this->DiagnosisRow('Weekly schedule', $unused);
+        } elseif (!IPS_EventExists($eid)) {
+            $rows[] = $this->DiagnosisRow('Weekly schedule', $this->Translate('Missing'), self::ROW_ERROR);
+        } else {
+            $info = $this->GetWeeklyScheduleInfo($eid);
+            $color = '';
+            if ($info['WeekPlanActiv'] !== 1) {
+                $schedule = $this->Translate('disabled (ignored)');
+            } elseif ($info['ActionID'] === self::SCHEDULE_OFF) {
+                $schedule = $this->Translate('Inactive');
+                $color = self::ROW_BLOCKED;
+            } else {
+                $schedule = $this->Translate('Active');
+            }
+            $rows[] = $this->DiagnosisRow('Weekly schedule', $schedule, $color);
+        }
+
+        // Brightness
+        $bid = $this->ReadPropertyInteger('BrightnessVariable');
+        $dark = $this->CheckBrightness();
+        if ($bid < self::IPS_MIN_ID) {
+            $rows[] = $this->DiagnosisRow('Brightness', $unused);
+        } elseif (!IPS_VariableExists($bid)) {
+            $rows[] = $this->DiagnosisRow('Brightness', $this->Translate('Missing'), self::ROW_ERROR);
+        } else {
+            $threshold = $this->GetThreshold();
+            $limit = ($threshold === 0) ? $this->Translate('always') : $threshold . ' lx';
+            $rows[] = $this->DiagnosisRow('Brightness', sprintf($this->Translate('%s (threshold: %s)'), GetValueFormatted($bid), $limit), $dark ? '' : self::ROW_BLOCKED);
+        }
+
+        // Devices
+        if (empty($variables)) {
+            $rows[] = $this->DiagnosisRow('Device', $this->Translate('none selected'), ($this->ReadPropertyInteger('ScriptVariable') < self::IPS_MIN_ID) ? self::ROW_ERROR : '');
+        }
+        foreach ($variables as $vid) {
+            if (!IPS_VariableExists($vid)) {
+                $rows[] = $this->DiagnosisRow('Device', '#' . $vid . ' ' . $this->Translate('Missing'), self::ROW_ERROR);
+                continue;
+            }
+            $state = $this->GetVariableStatus($vid);
+            if ($state === 'OK') {
+                $rows[] = $this->DiagnosisRow('Device', IPS_GetName($vid) . ': ' . (GetValueBoolean($vid) ? $this->Translate('ON') : $this->Translate('OFF')));
+            } else {
+                $rows[] = $this->DiagnosisRow('Device', IPS_GetName($vid) . ': ' . $state, self::ROW_ERROR);
+            }
+        }
+
+        // Script
+        $always = $this->ReadPropertyBoolean('ExecuteAlways');
+        $sid = $this->ReadPropertyInteger('ScriptVariable');
+        if ($sid < self::IPS_MIN_ID) {
+            $rows[] = $this->DiagnosisRow('Script', $this->Translate('none'));
+        } elseif (!IPS_ScriptExists($sid)) {
+            $rows[] = $this->DiagnosisRow('Script', $this->Translate('Missing'), self::ROW_ERROR);
+        } else {
+            $rows[] = $this->DiagnosisRow('Script', sprintf($this->Translate($always ? '%s (always, regardless of brightness)' : '%s (together with the devices)'), IPS_GetName($sid)));
+        }
+
+        // Last trigger
+        $last = $this->ReadAttributeInteger('LastTrigger');
+        $rows[] = $this->DiagnosisRow('Last trigger', ($last > 0) ? date('d.m.Y H:i:s', $last) : $this->Translate('never'));
+
+        // Result
+        $error = false;
+        $reason = $this->GetBlockReason();
+        if ($status !== IS_ACTIVE) {
+            $result = $this->Translate('The presence detector does not work, see the marked entries!');
+            $error = true;
+        } elseif ($reason !== '') {
+            $result = sprintf($this->Translate('Motion does not switch: %s'), $this->Translate($reason));
+        } elseif (!$dark) {
+            $result = $this->Translate(($always && ($sid >= self::IPS_MIN_ID)) ? 'Too bright, motion only executes the script.' : 'Too bright, motion does not switch.');
+        } elseif (empty($variables)) {
+            $result = $this->Translate('Motion executes the script.');
+        } else {
+            $result = $this->Translate('Motion switches on the devices.');
+        }
+
+        $this->UpdateFormField('DiagnosisList', 'rowCount', count($rows));
+        $this->UpdateFormField('DiagnosisList', 'values', json_encode($rows));
+        $this->UpdateFormField('DiagnosisResult', 'caption', $this->Translate('Result') . ': ' . $result);
+        $this->UpdateFormField('DiagnosisResult', 'color', $error ? self::RESULT_ERROR_COLOR : 0);
+        $this->UpdateFormField('DiagnosisPopup', 'visible', true);
     }
 
     /**
-     * Check brightness condition
+     * Builds a row of the diagnosis list.
      *
-     * @return bool true if check successful; otherwise false.
+     * @param string $check Name of the check (untranslated)
+     * @param string $state State (already translated)
+     * @param string $color Row color (empty for transparent)
+     *
+     * @return array<string,string> List row
+     */
+    private function DiagnosisRow(string $check, string $state, string $color = ''): array
+    {
+        return ['Check' => $this->Translate($check), 'State' => $state, 'rowColor' => $color];
+    }
+
+    /**
+     * A motion detector has detected a motion, evaluate the logical link.
+     *
+     * @param int $sender Variable ID of the motion detector.
+     *
+     * @return void
+     */
+    private function OnMotion(int $sender): void
+    {
+        $sensors = $this->GetMotionVariables();
+        if (count($sensors) < 2) {
+            $this->LogDebug(__FUNCTION__, 'Single motion detector #' . $sender);
+            $this->Fire();
+            return;
+        }
+        $waiting = (int) $this->GetBuffer('Trigger');
+        $running = ($this->GetTimerInterval(self::TIMER_IDENT) > 0);
+        switch ($this->ReadPropertyInteger('LogicalLink')) {
+            case self::LINK_OR:
+                // Fire and block further triggers within the time frame
+                if ($running) {
+                    $this->LogDebug(__FUNCTION__, 'OR: blocked within time frame (#' . $sender . ')');
+                    return;
+                }
+                $this->StartWindow($sender);
+                $this->Fire();
+                break;
+            case self::LINK_AND:
+                // Fire when the other detector follows within the time frame
+                if (!$running) {
+                    $this->LogDebug(__FUNCTION__, 'AND: wait for second detector (#' . $sender . ')');
+                    $this->StartWindow($sender);
+                } elseif ($waiting === $sender) {
+                    $this->LogDebug(__FUNCTION__, 'AND: same detector again, keep waiting (#' . $sender . ')');
+                } else {
+                    $this->LogDebug(__FUNCTION__, 'AND: condition fulfilled (#' . $waiting . ', #' . $sender . ')');
+                    $this->ResetWindow();
+                    $this->Fire();
+                }
+                break;
+            case self::LINK_NOT:
+                // Fire when the first detector is not followed by the second within the time frame
+                if ($sender === $this->ReadPropertyInteger('MotionVariable')) {
+                    if (!$running) {
+                        $this->LogDebug(__FUNCTION__, 'NOT: wait for time frame (#' . $sender . ')');
+                        $this->StartWindow($sender);
+                    }
+                } elseif ($running) {
+                    $this->LogDebug(__FUNCTION__, 'NOT: condition violated by #' . $sender);
+                    $this->ResetWindow();
+                } else {
+                    $this->LogDebug(__FUNCTION__, 'NOT: second detector alone ignored (#' . $sender . ')');
+                }
+                break;
+        }
+    }
+
+    /**
+     * The time frame of the logical link has expired.
+     *
+     * @return void
+     */
+    private function OnWindowExpired(): void
+    {
+        $waiting = (int) $this->GetBuffer('Trigger');
+        $this->ResetWindow();
+        $fire = ($this->ReadPropertyInteger('LogicalLink') === self::LINK_NOT) && ($waiting > 0) && (count($this->GetMotionVariables()) === 2);
+        $this->LogDebug(__FUNCTION__, 'Time frame expired, fire: ' . ($fire ? 'true' : 'false'));
+        if ($fire) {
+            $this->Fire();
+        }
+    }
+
+    /**
+     * Starts the time frame of the logical link.
+     *
+     * @param int $sender Motion detector which started the time frame.
+     *
+     * @return void
+     */
+    private function StartWindow(int $sender): void
+    {
+        $delay = $this->ReadPropertyInteger('SensorDelay');
+        if ($delay <= 0) {
+            return;
+        }
+        $this->SetBuffer('Trigger', (string) $sender);
+        $this->SetTimerInterval(self::TIMER_IDENT, $delay);
+    }
+
+    /**
+     * Stops the time frame of the logical link.
+     *
+     * @return void
+     */
+    private function ResetWindow(): void
+    {
+        $this->SetTimerInterval(self::TIMER_IDENT, 0);
+        $this->SetBuffer('Trigger', '0');
+    }
+
+    /**
+     * Motion condition is fulfilled, check the secondary conditions and switch.
+     *
+     * @return void
+     */
+    private function Fire(): void
+    {
+        $reason = $this->GetBlockReason();
+        if ($reason !== '') {
+            $this->LogDebug(__FUNCTION__, $reason);
+            return;
+        }
+        $dark = $this->CheckBrightness();
+        $executed = false;
+        if ($dark) {
+            $executed = $this->SwitchDevices();
+        }
+        if (($dark || $this->ReadPropertyBoolean('ExecuteAlways')) && $this->ExecuteScript()) {
+            $executed = true;
+        }
+        if ($executed) {
+            $this->UpdateLastTrigger(time());
+        }
+    }
+
+    /**
+     * Remembers the time of the last trigger (attribute) and updates the variable (if created).
+     *
+     * @param int $timestamp Time of the trigger
+     *
+     * @return void
+     */
+    private function UpdateLastTrigger(int $timestamp): void
+    {
+        $this->WriteAttributeInteger('LastTrigger', $timestamp);
+        if ($this->ReadPropertyBoolean('CheckLastTrigger') && (@$this->GetIDForIdent('LastTrigger') !== false)) {
+            $this->SetValueInteger('LastTrigger', $timestamp);
+        }
+    }
+
+    /**
+     * Returns the reason why the presence detector is blocked.
+     *
+     * @return string Untranslated reason or empty string if not blocked.
+     */
+    private function GetBlockReason(): string
+    {
+        if (!$this->IsAutomatic()) {
+            return 'Automatic is switched off!';
+        }
+        $eid = $this->ReadPropertyInteger('EventVariable');
+        if (($eid >= self::IPS_MIN_ID) && IPS_EventExists($eid)) {
+            $state = $this->GetWeeklyScheduleInfo($eid);
+            if (($state['WeekPlanActiv'] === 1) && ($state['ActionID'] === self::SCHEDULE_OFF)) {
+                return 'Weekly schedule is inactive!';
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Checks whether the automatic is switched on.
+     *
+     * @return bool True if the automatic is on (or the variable does not exist).
+     */
+    private function IsAutomatic(): bool
+    {
+        return (@$this->GetIDForIdent('Automatic') === false) || (bool) $this->GetValue('Automatic');
+    }
+
+    /**
+     * Checks the brightness condition.
+     *
+     * @return bool True if it is dark enough (or no brightness is used).
      */
     private function CheckBrightness(): bool
     {
-        // Check brightness
-        if ($this->ReadPropertyInteger('BrightnessVariable') >= self::IPS_MIN_ID) {
-            $bv = GetValue($this->ReadPropertyInteger('BrightnessVariable'));
-            $tv = $this->ReadPropertyInteger('ThresholdValue');
-            if ($this->ReadPropertyBoolean('ThresholdVariable')) {
-                $tv = $this->GetValue('BrightnessThreshold');
-            }
-            if (($tv != 0) && ($bv > $tv)) {
-                $this->LogDebug(__FUNCTION__, 'Brightness: ' . $bv . ' above threshold: ' . $tv);
-                return false; // nothing to do
-            }
-            $this->LogDebug(__FUNCTION__, 'Always or below threshold: ' . $bv . ' (Threshold: ' . $tv . ')');
+        $bid = $this->ReadPropertyInteger('BrightnessVariable');
+        if (($bid < self::IPS_MIN_ID) || !IPS_VariableExists($bid)) {
+            return true;
+        }
+        $threshold = $this->GetThreshold();
+        $brightness = GetValue($bid);
+        if (($threshold !== 0) && ($brightness > $threshold)) {
+            $this->LogDebug(__FUNCTION__, 'Brightness ' . $brightness . ' above threshold ' . $threshold);
+            return false;
         }
         return true;
     }
 
     /**
-     * Check weekly schedule
+     * Returns the current brightness threshold (0 = always).
      *
-     * @return bool true if check successful; otherwise false.
+     * @return int Threshold in lux
      */
-    private function CheckSchedule(): bool
+    private function GetThreshold(): int
     {
-        // Check weekly schedule
-        $eid = $this->ReadPropertyInteger('EventVariable');
-        if ($eid >= self::IPS_MIN_ID) {
-            $state = $this->GetWeeklyScheduleInfo($eid);
-            if ($state['WeekPlanActiv'] == 1 && $state['ActionID'] == 2) {
-                $this->LogDebug(__FUNCTION__, 'Schedule plan is inactiv!');
-                return false; // nothing to do
-            }
+        if (@$this->GetIDForIdent('BrightnessThreshold') !== false) {
+            return (int) $this->GetValue('BrightnessThreshold');
         }
-        return true;
+        return $this->ReadPropertyInteger('ThresholdValue');
     }
 
     /**
-     * Switch Devices if deposite
+     * Switches on all configured devices.
      *
-     * @return void
+     * @return bool True if at least one device was switched on.
      */
-    private function SwitchDevices(): void
+    private function SwitchDevices(): bool
     {
-        // Switch variable(s)
-        $number = $this->ReadPropertyInteger('DeviceNumber');
-        if ($number == self::DEVICE_ONE) {
-            $dv = $this->ReadPropertyInteger('SwitchVariable');
-            $this->LogDebug(__FUNCTION__, 'Switch only one device: ' . $dv);
-            if ($dv >= self::IPS_MIN_ID) {
-                $ret = @RequestAction($dv, true);
-                if ($ret === false) {
-                    $this->LogDebug(__FUNCTION__, 'Device #' . $dv . ' could not be switched by RequestAction!');
-                    $ret = @SetValueBoolean($dv, true);
-                    if ($ret === false) {
-                        $this->LogDebug(__FUNCTION__, 'Device could not be switched by Boolean!');
-                    }
-                }
-                if ($ret === false) {
-                    $this->LogMessage('Device could not be switched (UNREACH)!');
-                }
+        $switched = false;
+        foreach ($this->GetSwitchVariables() as $vid) {
+            if ($this->SwitchOn($vid)) {
+                $switched = true;
             }
+        }
+        return $switched;
+    }
+
+    /**
+     * Switches on a single device.
+     *
+     * @param int $vid Variable ID of the device.
+     *
+     * @return bool True if the device was switched on.
+     */
+    private function SwitchOn(int $vid): bool
+    {
+        if (!IPS_VariableExists($vid)) {
+            $ok = false;
+        } elseif (HasAction($vid)) {
+            $ok = (@RequestAction($vid, true) !== false);
+        } elseif ($this->IsDirectSwitchable($vid)) {
+            $ok = @SetValueBoolean($vid, true);
         } else {
-            $variables = json_decode($this->ReadPropertyString('SwitchVariables'), true);
-            $ret = true;
-            foreach ($variables as $variable) {
-                $this->LogDebug(__FUNCTION__, 'Switch multible devices: ' . $variable['VariableID']);
-                $ret = @RequestAction($variable['VariableID'], true);
-                if ($ret === false) {
-                    $this->LogDebug(__FUNCTION__, 'Device #' . $variable['VariableID'] . ' could not be switched by RequestAction!');
-                    $ret = false;
-                }
-            }
-            if ($ret === false) {
-                $this->LogMessage('One or more devices could not be switched!');
-            }
+            $ok = false;
         }
+        if ($ok) {
+            $this->LogDebug(__FUNCTION__, 'Variable #' . $vid . ' switched ON');
+        } else {
+            $this->LogDebug(__FUNCTION__, 'Variable #' . $vid . ' could not be switched!');
+            $this->LogMessage(sprintf($this->Translate('Device #%d could not be switched on!'), $vid), KL_WARNING);
+        }
+        return $ok;
     }
 
     /**
-     * Executes the script if deposited
+     * Executes the script if deposited.
      *
-     * @return void
+     * @return bool True if the script was started.
      */
-    private function ExecuteScript(): void
+    private function ExecuteScript(): bool
     {
-        // Run script
-        if ($this->ReadPropertyInteger('ScriptVariable') >= self::IPS_MIN_ID) {
-            if (IPS_ScriptExists($this->ReadPropertyInteger('ScriptVariable'))) {
-                $mv = $this->ReadPropertyInteger('MotionVariable');
-                $sv = $this->ReadPropertyInteger('SensorVariable');
-                if ($sv != 0) {
-                    $mv = '' . $mv . ',' . $sv;
-                }
-                $bv = $this->ReadPropertyInteger('BrightnessVariable');
-                $dv = $this->ReadPropertyInteger('SwitchVariable');
-                $tv = $this->ReadPropertyInteger('ThresholdValue');
-                if ($this->ReadPropertyBoolean('ThresholdVariable')) {
-                    $tv = $this->GetValue('BrightnessThreshold');
-                }
-                $number = $this->ReadPropertyInteger('DeviceNumber');
-                if ($number == self::DEVICE_MULTIPLE) {
-                    $variables = json_decode($this->ReadPropertyString('SwitchVariables'), true);
-                    $dv = implode(',', array_column($variables, 'VariableID'));
-                }
-                $ret = IPS_RunScriptEx(
-                    $this->ReadPropertyInteger('ScriptVariable'),
-                    ['MotionVariable' => $mv, 'BrightnessVariable' => $bv, 'SwitchVariable' => $dv, 'ThresholdValue' => $tv]
-                );
-                $this->LogDebug(__FUNCTION__, 'Script return value: ' . $ret);
-            }
+        $sid = $this->ReadPropertyInteger('ScriptVariable');
+        if ($sid < self::IPS_MIN_ID) {
+            return false;
         }
+        if (!IPS_ScriptExists($sid)) {
+            $this->LogDebug(__FUNCTION__, 'Script #' . $sid . ' does not exist!');
+            return false;
+        }
+        $sensors = $this->GetMotionVariables();
+        $variables = $this->GetSwitchVariables();
+        $ret = IPS_RunScriptEx($sid, [
+            'MotionVariable'     => (count($sensors) === 1) ? $sensors[0] : implode(',', $sensors),
+            'BrightnessVariable' => $this->ReadPropertyInteger('BrightnessVariable'),
+            'SwitchVariable'     => (count($variables) === 1) ? $variables[0] : implode(',', $variables),
+            'ThresholdValue'     => $this->GetThreshold(),
+            'INSTANCE'           => $this->InstanceID,
+        ]);
+        $this->LogDebug(__FUNCTION__, 'Script return value: ' . $this->Stringify($ret));
+        return true;
     }
 
     /**
-     * Received the status of a given variable
+     * Returns the configured motion detectors (first, second).
      *
-     * @param int $vid variable ID.
+     * @return array<int> Variable IDs
+     */
+    private function GetMotionVariables(): array
+    {
+        $sensors = [];
+        foreach (['MotionVariable', 'SensorVariable'] as $property) {
+            $variable = $this->ReadPropertyInteger($property);
+            if ($variable >= self::IPS_MIN_ID) {
+                $sensors[] = $variable;
+            }
+        }
+        return array_values(array_unique($sensors));
+    }
+
+    /**
+     * Returns the configured switch variables (single or multiple devices).
      *
-     * @return string status of the variable.
+     * @return array<int> Variable IDs
+     */
+    private function GetSwitchVariables(): array
+    {
+        if ($this->ReadPropertyInteger('DeviceNumber') === self::DEVICE_ONE) {
+            $variable = $this->ReadPropertyInteger('SwitchVariable');
+            return ($variable >= self::IPS_MIN_ID) ? [$variable] : [];
+        }
+        $variables = [];
+        $list = json_decode($this->ReadPropertyString('SwitchVariables'), true);
+        foreach (is_array($list) ? $list : [] as $line) {
+            $variable = (int) ($line['VariableID'] ?? 0);
+            if ($variable >= self::IPS_MIN_ID) {
+                $variables[] = $variable;
+            }
+        }
+        return array_values(array_unique($variables));
+    }
+
+    /**
+     * Checks the configuration and returns the resulting instance status.
+     *
+     * @param array<int> $sensors   Configured motion detectors.
+     * @param array<int> $variables Configured switch variables.
+     *
+     * @return int Status code
+     */
+    private function CheckConfiguration(array $sensors, array $variables): int
+    {
+        if (empty($sensors)) {
+            $this->LogDebug(__FUNCTION__, 'No motion variable configured!');
+            return IS_INACTIVE;
+        }
+        foreach ($sensors as $mid) {
+            if (!IPS_VariableExists($mid)) {
+                $this->LogDebug(__FUNCTION__, 'Motion variable #' . $mid . ' does not exist!');
+                return self::STATUS_MOTION_MISSING;
+            }
+        }
+        $script = $this->ReadPropertyInteger('ScriptVariable');
+        if (empty($variables) && ($script < self::IPS_MIN_ID)) {
+            $this->LogDebug(__FUNCTION__, 'Neither switch variable nor script configured!');
+            return IS_INACTIVE;
+        }
+        foreach ($variables as $vid) {
+            if (!IPS_VariableExists($vid)) {
+                $this->LogDebug(__FUNCTION__, 'Variable #' . $vid . ' does not exist!');
+                return self::STATUS_VARIABLE_MISSING;
+            }
+            if ($this->GetVariableStatus($vid) !== 'OK') {
+                $this->LogDebug(__FUNCTION__, 'Variable #' . $vid . ' is not switchable!');
+                return self::STATUS_VARIABLE_INVALID;
+            }
+        }
+        $brightness = $this->ReadPropertyInteger('BrightnessVariable');
+        if (($brightness >= self::IPS_MIN_ID) && !IPS_VariableExists($brightness)) {
+            $this->LogDebug(__FUNCTION__, 'Brightness variable #' . $brightness . ' does not exist!');
+            return self::STATUS_BRIGHTNESS_MISSING;
+        }
+        $event = $this->ReadPropertyInteger('EventVariable');
+        if (($event >= self::IPS_MIN_ID) && !IPS_EventExists($event)) {
+            $this->LogDebug(__FUNCTION__, 'Event #' . $event . ' does not exist!');
+            return self::STATUS_SCHEDULE_MISSING;
+        }
+        if (($script >= self::IPS_MIN_ID) && !IPS_ScriptExists($script)) {
+            $this->LogDebug(__FUNCTION__, 'Script #' . $script . ' does not exist!');
+            return self::STATUS_SCRIPT_MISSING;
+        }
+        if ((count($sensors) === 2) && ($this->ReadPropertyInteger('LogicalLink') !== self::LINK_OR) && ($this->ReadPropertyInteger('SensorDelay') <= 0)) {
+            $this->LogDebug(__FUNCTION__, 'AND/NOT link requires a time frame!');
+            return self::STATUS_DELAY_REQUIRED;
+        }
+        return IS_ACTIVE;
+    }
+
+    /**
+     * Checks whether a variable without action may be set directly.
+     * Only allowed by the user and only for variables which do not belong to an instance.
+     *
+     * @param int $vid Variable ID
+     *
+     * @return bool True if the value may be set directly
+     */
+    private function IsDirectSwitchable(int $vid): bool
+    {
+        return $this->ReadPropertyBoolean('SettingsDirect') && !IPS_InstanceExists(IPS_GetParent($vid));
+    }
+
+    /**
+     * Returns the status of a given switch variable.
+     *
+     * @param int $vid Variable ID.
+     *
+     * @return string 'OK' or a translated status message
      */
     private function GetVariableStatus(int $vid): string
     {
         if (!IPS_VariableExists($vid)) {
             return $this->Translate('Missing');
-        } else {
-            $var = IPS_GetVariable($vid);
-            switch ($var['VariableType']) {
-                case VARIABLETYPE_BOOLEAN:
-                    if ($var['VariableCustomProfile'] != '') {
-                        $profile = $var['VariableCustomProfile'];
-                    } else {
-                        $profile = $var['VariableProfile'];
-                    }
-                    if (!IPS_VariableProfileExists($profile)) {
-                        return $this->Translate('Profile required');
-                    }
-                    if ($var['VariableCustomAction'] != 0) {
-                        $action = $var['VariableCustomAction'];
-                    } else {
-                        $action = $var['VariableAction'];
-                    }
-                    if (!($action > 10000)) {
-                        return $this->Translate('Action required');
-                    }
-                    return 'OK';
-                default:
-                    return $this->Translate('Bool required');
-            }
         }
+        if (IPS_GetVariable($vid)['VariableType'] !== VARIABLETYPE_BOOLEAN) {
+            return $this->Translate('Bool required');
+        }
+        if (!HasAction($vid) && !$this->IsDirectSwitchable($vid)) {
+            return $this->Translate('Action required');
+        }
+        return 'OK';
     }
 }
